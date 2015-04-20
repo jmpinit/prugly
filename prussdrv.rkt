@@ -3,7 +3,7 @@
 (require ffi/unsafe
          ffi/unsafe/define)
 
-(define-ffi-definer define-drv (ffi-lib "libsimpledrv"))
+(define-ffi-definer define-drv (ffi-lib "simpledrv/libsimpledrv"))
 
 (define-drv drv_init (_fun -> _int))
 (define-drv drv_open (_fun _int -> _int))
