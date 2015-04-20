@@ -1,0 +1,10 @@
+# binaries
+*.bin
+
+# intermediate artifacts
+*.so
+*.o
+
+# Vim swap files
+*.swp
+*.swo
