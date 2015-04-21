@@ -25,31 +25,59 @@
 (define (sel v)
   (list-ref selector-names v))
 
+(define (fmt-instr . values)
+  (match values
+         [(list 'naked instr)
+          (format "~a" instr)]
+
+         [(list 'reg instr r rsel)
+          (format "~a\tr~v~a" instr r (sel rsel))]
+
+         [(list 'reg-reg instr rd rdsel r1 rsel1 r2 rsel2)
+          (format "~a\tr~v~a, r~v~a" instr rd (sel rdsel) r1 (sel rdsel) r2 (sel rdsel))]
+
+         [(list 'reg-reg-reg instr rd rdsel r1 rsel1 r2 rsel2)
+          (format "~a\tr~v~a, r~v~a, r~v~a" instr rd (sel rdsel) r1 (sel rdsel) r2 (sel rdsel))]
+
+         [(list 'imm instr imm-value)
+          (format "~a\t0x~x" instr imm-value)]
+
+         [(list 'reg-imm instr rd rdsel imm-value)
+          (format "~a\tr~v~a, 0x~x" instr rd (sel rdsel) imm-value)]
+
+         [_ (error "unrecognized format.")]))
+
 ; TODO special syntax for bit fields
 (define (disassemble-fmt-0 instr) "___")
 
 (define (disassemble-fmt-1 instr)
   (let ([sub-opcode (bit-slice instr 25 4)]
         [io         (bit-slice instr 24 1)]
-        [imm-value  (bit-slice instr 8 16)]
+        [imm-16     (bit-slice instr 8 16)]
+        [imm-8      (bit-slice instr 16 8)]
         [rsel2      (bit-slice instr 21 3)]
         [rs2        (bit-slice instr 16 5)]
         [rsel1      (bit-slice instr 13 3)]
         [rs1        (bit-slice instr 8 5)]
         [rdsel      (bit-slice instr 5 3)]
-        [rd         (bit-slice instr 0 5)])
+        [rd         (bit-slice instr 0 5)]
+        [bit-slp    (bit-slice instr 23 1)])
     (case sub-opcode
       [(0) (case io
-             [(0) (format "jmp\tr~v~a" rs2 (sel rsel2))]
-             [(1) (format "jmp\t0x~x" imm-value)])]
+             [(0) (fmt-instr 'reg "jmp" rs2 rsel2)]
+             [(1) (fmt-instr 'imm "jmp" imm-16)])]
       [(1) (case io
-             [(0) (format "jal\tr~v~a, r~v~s" rs2 (sel rsel2) rd (sel rdsel))]
-             [(1) (format "jal\tr~v~a, 0x~x" rd (sel rdsel) imm-value)])]
-      [(2) (format "ldi~cr~v~a, 0x~x" #\tab rd (sel rdsel) imm-value)]
-      [(3)  "lmbd"]
-      [(4)  "scan"]
-      [(5)  "halt"]
-      [(15) "slp"])))
+             [(0) (fmt-instr 'reg-reg "jal" rd rdsel rs2 rsel2)]
+             [(1) (fmt-instr 'reg-imm "jal" rd rdsel imm-16)])]
+      [(2) (fmt-instr 'reg-imm "ldi" rd rdsel imm-16)]
+      [(3) (case io
+             [(0) (fmt-instr 'reg-reg-reg "lmbd" rd rdsel rs1 rsel1 rs2 rsel2)]
+             [(1) (fmt-instr 'reg-reg-imm "lmbd" rd rdsel rs1 rsel1 imm-8)])]
+      [(4) (case io
+             [(0) (fmt-instr 'reg-reg "scan" rd rdsel rs2 rsel2)]
+             [(1) (fmt-instr 'reg-reg-imm "scan" rd rdsel rs1 rsel1 imm-8)])]
+      [(5)  (fmt-instr 'naked "halt")]
+      [(15) (fmt-instr 'imm "slp" bit-slp)])))
 
 (define (disassemble-fmt-2 instr) "___")
 (define (disassemble-fmt-3 instr) "___")
