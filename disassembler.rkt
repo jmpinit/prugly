@@ -1,16 +1,12 @@
 #lang racket
 
+(require "architecture.rkt")
+
 ; split list into lists of n elements
 (define (split-by lst n)
   (if (not (empty? lst))
     (cons (take lst n) (split-by (drop lst n) n))
     '()))
-
-; make a number from a bit range
-(define (bit-slice num start len)
-  (let ([mask (- (expt 2 len) 1)])
-    (bitwise-and (arithmetic-shift num (- start)) mask)))
-
 
 (define (read-instructions port)
   (let ([instr-bytes (bytes->list (port->bytes port))])
@@ -41,7 +37,6 @@
         ", "))
     ""))
 
-; TODO special syntax for bit fields
 (define (disassemble-fmt-0 instr)
   (define instructions
     (list   "add" "adc" "sub" "suc"
@@ -49,98 +44,81 @@
             "and" "or"  "xor" "not"
             "min" "max" "clr" "set"))
 
-  (let ([alu-op     (bit-slice instr 25 4)]
-        [io         (bit-slice instr 24 1)]
-        [imm-8      (bit-slice instr 16 8)]
-        [rsel2      (bit-slice instr 21 3)]
-        [rs2        (bit-slice instr 16 5)]
-        [rsel1      (bit-slice instr 13 3)]
-        [rs1        (bit-slice instr 8 5)]
-        [rdsel      (bit-slice instr 5 3)]
-        [rd         (bit-slice instr 0 5)])
+  (let-instruction-fields
+    instr ([op 3] [alu-op 4] [io 1] [imm-8 8] [rsel1 3] [rs1 5] [rdsel 3] [rd 5])
+    (begin
+      (define rsel2   (bit-slice imm-8 5 3))
+      (define rs2     (bit-slice imm-8 0 5))
 
-    (case io
-      [(0) (fmt-instr '(reg reg reg)
-                      (list-ref instructions alu-op)
-                      (list rd  rdsel)
-                      (list rs1 rsel1)
-                      (list rs2 rsel2))]
-      [(1) (fmt-instr '(reg reg imm)
-                      (list-ref instructions alu-op)
-                      (list rd  rdsel)
-                      (list rs1 rsel1)
-                      (list rs2 rsel2))])))
+      (case io
+        [(0) (fmt-instr '(reg reg reg)
+                        (list-ref instructions alu-op)
+                        (list rd  rdsel)
+                        (list rs1 rsel1)
+                        (list rs2 rsel2))]
+        [(1) (fmt-instr '(reg reg imm)
+                        (list-ref instructions alu-op)
+                        (list rd  rdsel)
+                        (list rs1 rsel1)
+                        (list rs2 rsel2))]))))
 
 (define (disassemble-fmt-1 instr)
-  (let ([sub-opcode (bit-slice instr 25 4)]
-        [io         (bit-slice instr 24 1)]
-        [imm-16     (bit-slice instr 8 16)]
-        [imm-8      (bit-slice instr 16 8)]
-        [rsel2      (bit-slice instr 21 3)]
-        [rs2        (bit-slice instr 16 5)]
-        [rsel1      (bit-slice instr 13 3)]
-        [rs1        (bit-slice instr 8 5)]
-        [rdsel      (bit-slice instr 5 3)]
-        [rd         (bit-slice instr 0 5)]
-        [bit-slp    (bit-slice instr 23 1)])
-    (case sub-opcode
-      [(0) (case io
-             [(0) (fmt-instr '(reg) "jmp" (list rs2 rsel2))]
-             [(1) (fmt-instr '(imm) "jmp" imm-16)])]
-      [(1) (case io
-             [(0) (fmt-instr '(reg reg) "jal" (list rd rdsel) (list rs2 rsel2))]
-             [(1) (fmt-instr '(reg imm) "jal" (list rd rdsel) imm-16)])]
-      [(2) (fmt-instr '(reg imm) "ldi" (list rd rdsel) imm-16)]
-      [(3) (case io
-             [(0) (fmt-instr '(reg reg reg) "lmbd" (list rd rdsel) (list rs1 rsel1) (list rs2 rsel2))]
-             [(1) (fmt-instr '(reg reg imm) "lmbd" (list rd rdsel) (list rs1 rsel1) imm-8)])]
-      [(4) (case io
-             [(0) (fmt-instr '(reg reg) "scan" (list rd rdsel) (list rs2 rsel2))]
-             [(1) (fmt-instr '(reg reg imm) "scan" (list rd rdsel) (list rs1 rsel1) imm-8)])]
-      [(5)  (fmt-instr '() "halt")]
-      [(15) (fmt-instr '(imm) "slp" bit-slp)])))
+  (let-instruction-fields
+    instr ([op 3] [sub-op 4] [io 1] [imm-16 16] [rdsel 3] [rd 5])
+    (extract-bitfields
+      16 imm-16 ([rsel2 3] [rs2 5] [rsel1 3] [rs1 5])
+      (begin
+        (define imm-8 (bit-slice imm-16 8 8))
+        (define bit-slp (bit-slice instr 23 1))
+
+        (case sub-op
+          [(0) (case io
+                 [(0) (fmt-instr '(reg) "jmp" (list rs2 rsel2))]
+                 [(1) (fmt-instr '(imm) "jmp" imm-16)])]
+          [(1) (case io
+                 [(0) (fmt-instr '(reg reg) "jal" (list rd rdsel) (list rs2 rsel2))]
+                 [(1) (fmt-instr '(reg imm) "jal" (list rd rdsel) imm-16)])]
+          [(2) (fmt-instr '(reg imm) "ldi" (list rd rdsel) imm-16)]
+          [(3) (case io
+                 [(0) (fmt-instr '(reg reg reg) "lmbd" (list rd rdsel) (list rs1 rsel1) (list rs2 rsel2))]
+                 [(1) (fmt-instr '(reg reg imm) "lmbd" (list rd rdsel) (list rs1 rsel1) imm-8)])]
+          [(4) (case io
+                 [(0) (fmt-instr '(reg reg) "scan" (list rd rdsel) (list rs2 rsel2))]
+                 [(1) (fmt-instr '(reg reg imm) "scan" (list rd rdsel) (list rs1 rsel1) imm-8)])]
+          [(5)  (fmt-instr '() "halt")]
+          [(15) (fmt-instr '(imm) "slp" bit-slp)])))))
 
 (define (disassemble-fmt-2 instr)
   (define instructions (list "xxx" "qblt" "qbeq" "qble" "qbgt" "qbne" "qbge" "qba"))
 
-  (let ([test       (bit-slice instr 27 3)]
-        [io         (bit-slice instr 24 1)]
-        [imm-8      (bit-slice instr 16 8)]
-        [rsel2      (bit-slice instr 21 3)]
-        [rs2        (bit-slice instr 16 5)]
-        [rsel1      (bit-slice instr 13 3)]
-        [rs1        (bit-slice instr 8 5)]
-        [br-off     (bitwise-ior
-                      (arithmetic-shift (bit-slice instr 25 2) 8)
-                      (bit-slice instr 0 8))])
+  (let-instruction-fields
+    instr ([op 2] [test 3] [br-off-h 2] [io 1] [imm-8 8] [rsel1 3] [rs1 5] [br-off-l 8])
+    (begin
+      (define br-off (bitwise-ior (arithmetic-shift br-off-h 8) br-off-l))
+      (define rsel2 (bit-slice imm-8 5 3))
+      (define rs2   (bit-slice imm-8 0 5))
 
-    ; FIXME error on xxx
-    (define opname (list-ref instructions test))
+      ; FIXME error on xxx
+      (define opname (list-ref instructions test))
 
-    (case io
-      [(0) (fmt-instr '(imm reg reg) opname br-off (list rs1 rsel1) (list rs2 rsel2))]
-      [(1) (fmt-instr '(imm reg imm) opname br-off (list rs1 rsel1) imm-8)])))
+      (case io
+        [(0) (fmt-instr '(imm reg reg) opname br-off (list rs1 rsel1) (list rs2 rsel2))]
+        [(1) (fmt-instr '(imm reg imm) opname br-off (list rs1 rsel1) imm-8)]))))
 
 (define (disassemble-fmt-3 instr)
   (define instructions (list "xxx" "qbbc" "qbbs" "xxx"))
 
-  (let ([test       (bit-slice instr 27 2)]
-        [io         (bit-slice instr 24 1)]
-        [imm-5      (bit-slice instr 16 5)]
-        [rsel2      (bit-slice instr 21 3)]
-        [rs2        (bit-slice instr 16 5)]
-        [rsel1      (bit-slice instr 13 3)]
-        [rs1        (bit-slice instr 8 5)]
-        [br-off     (bitwise-ior
-                      (arithmetic-shift (bit-slice instr 25 2) 8)
-                      (bit-slice instr 0 8))])
+  (let-instruction-fields
+    instr ([op 3] [test 2] [br-off-h 2] [io 1] [rsel2 3] [rs2/imm-5 5] [rsel1 3] [rs1 5] [br-off-l 8])
+    (begin
+      (define br-off (bitwise-ior (arithmetic-shift br-off-h 8) br-off-l))
 
-    ; FIXME error on xxx
-    (define opname (list-ref instructions test))
+      ; FIXME error on xxx
+      (define opname (list-ref instructions test))
 
-    (case io
-      [(0) (fmt-instr '(imm reg reg) opname br-off (list rs1 rsel1) (list rs2 rsel2))]
-      [(1) (fmt-instr '(imm reg imm) opname br-off (list rs1 rsel1) imm-5)])))
+      (case io
+        [(0) (fmt-instr '(imm reg reg) opname br-off (list rs1 rsel1) (list rs2/imm-5 rsel2))]
+        [(1) (fmt-instr '(imm reg imm) opname br-off (list rs1 rsel1) rs2/imm-5)]))))
 
 (define (disassemble-fmt-4 instr)
   (define (instruction op load-store)
@@ -151,28 +129,25 @@
       ['(4 1) "lbco"]
       [_ (error "unrecognized instruction.")]))
 
-  (let ([op         (bit-slice instr 29 3)]
-        [load-store (bit-slice instr 28 1)]
-        [io         (bit-slice instr 24 1)]
-        [imm-8      (bit-slice instr 16 8)]
-        [rosel      (bit-slice instr 21 3)]
-        [ro         (bit-slice instr 15 5)]
-        [rb         (bit-slice instr 8 5)]
-        [rx-byte    (bit-slice instr 5 2)]
-        [rx         (bit-slice instr 0 5)]
-        [burst-len  (bitwise-ior
-                      (arithmetic-shift (bit-slice instr 25 3) 4)
-                      (arithmetic-shift (bit-slice instr 13 3) 1)
-                      (bit-slice instr 7 1))])
+  (let-instruction-fields
+    instr ([op 3] [load/store 1] [blen-h 3] [io 1] [imm-8 8] [blen-m 3] [rb 5] [blen-l 1] [rx-byte 2] [rx 5])
+    (begin
+      (define rosel (bit-slice imm-8 5 3))
+      (define ro (bit-slice imm-8 0 5))
+      (define burst-len
+        (bitwise-ior
+          (arithmetic-shift blen-h 4)
+          (arithmetic-shift blen-m 1)
+          blen-l))
 
-    (if (< burst-len 124)
-      (case io
-        [(0) (fmt-instr '(reg reg reg imm) (instruction op load-store) (list rx rx-byte) (list rb 7) (list ro rosel) burst-len)]
-        [(1) (fmt-instr '(reg reg imm imm) (instruction op load-store) (list rx rx-byte) (list rb 7) imm-8 burst-len)])
-      (let ([rsel0 (- burst-len 124)])
+      (if (< burst-len 124)
         (case io
-          [(0) (fmt-instr '(reg reg reg reg) (instruction op load-store) (list rx rx-byte) (list rb 7) (list ro rosel) (list 0 rsel0))]
-          [(1) (fmt-instr '(reg reg imm reg) (instruction op load-store) (list rx rx-byte) (list rb 7) imm-8 (list 0 rsel0))])))))
+          [(0) (fmt-instr '(reg reg reg imm) (instruction op load/store) (list rx rx-byte) (list rb 7) (list ro rosel) burst-len)]
+          [(1) (fmt-instr '(reg reg imm imm) (instruction op load/store) (list rx rx-byte) (list rb 7) imm-8 burst-len)])
+        (let ([rsel0 (- burst-len 124)])
+          (case io
+            [(0) (fmt-instr '(reg reg reg reg) (instruction op load/store) (list rx rx-byte) (list rb 7) (list ro rosel) (list 0 rsel0))]
+            [(1) (fmt-instr '(reg reg imm reg) (instruction op load/store) (list rx rx-byte) (list rb 7) imm-8 (list 0 rsel0))]))))))
 
 (define (disassemble-instruction instr)
   (let ([opcode (bit-slice instr 29 3)])

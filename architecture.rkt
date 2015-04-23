@@ -7,15 +7,17 @@
   (let ([mask (- (expt 2 len) 1)])
     (bitwise-and (arithmetic-shift num (- start)) mask)))
 
-(define-syntax extract-fields-from
+(define-syntax extract-bitfields
   (syntax-rules ()
-    [(extract-fields-from size value ([name len]) body)
+    [(extract-bitfields size value ([name len]) body)
      (let ([name (bit-slice value (- size len) len)]) body)]
-    [(extract-fields-from size value ([name len] name-len2 ...) body)
+    [(extract-bitfields size value ([name len] name-len2 ...) body)
      (let ([name (bit-slice value (- size len) len)])
-       (extract-fields-from (- size len) value (name-len2 ...) body))]))
+       (extract-bitfields (- size len) value (name-len2 ...) body))]))
 
-(extract-fields-from
-  32 #xdeadbeef
-  ([op 4] [reg 4] [reg1 8] [reg2 8] [reg3 8] [reg4 8])
-  (displayln (format "~x ~x ~x ~x ~x" op reg reg1 reg2 reg3)))
+(define-syntax let-instruction-fields
+  (syntax-rules ()
+    [(let-instruction-fields instruction (name-len ...) body)
+     (extract-bitfields 32 instruction (name-len ...) body)]))
+
+(provide bit-slice extract-bitfields let-instruction-fields)
