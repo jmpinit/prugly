@@ -34,6 +34,18 @@
       "Sum of field lengths bigger than bits in value."
 
       (check-exn exn:fail? (lambda ()
-                             (extract-bitfields 8 #xde '((a 4) (b 5))))))))
+                             (extract-bitfields 8 #xde '((a 4) (b 5))))))
+
+    (test-case
+      "Merging bitfields to make a byte."
+
+      (check-equal? (merge-bitfields 8 '((#xd 4) (#xe 4))) #xde))
+
+    (test-case
+      "Value too large for its bitfield."
+
+      (check-exn exn:fail? (lambda ()
+                             (merge-bitfields 8 '((#xff 4) (#xa 4))))))))
+
 
 (run-tests architecture-tests)

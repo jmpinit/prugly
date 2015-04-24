@@ -20,6 +20,14 @@
     [(let-instruction-fields instruction (name-len ...) body)
      (let-bitfields 32 instruction (name-len ...) body)]))
 
+; list of lengths to list of positions
+(define (lengths-to-positions lengths)
+  (map (lambda (i)
+         (let* ([lengths-to-left (take lengths i)]
+                [sum-to-left (foldl + 0 lengths-to-left)])
+           sum-to-left))
+       (range (length lengths))))
+
 ; produces a hash where keys name the values of fields of bits
 ; fields are specified in a list of lists like '((a 3) (b 5))
 ; fields are extracted from the given number left to right
@@ -27,16 +35,27 @@
   (let* ([field-names (map car fields)]
          [field-lengths (map second fields)]
          [total-length (foldl + 0 field-lengths)]
-         [positions (map (lambda (i)
-                           (let* ([lengths-to-left (take field-lengths i)]
-                                  [sum-to-left (foldl + 0 lengths-to-left)])
-                             (- size sum-to-left)))
-                         (range (length fields)))]
+         [positions (map (lambda (p) (- size p))
+                         (lengths-to-positions field-lengths))]
          [field-values (map (lambda (len pos) (bit-slice value (- pos len) len))
                             field-lengths positions)])
     (if (<= total-length size)
       (make-hash (map cons field-names field-values))
       (error "fields extract more bits than value contains."))))
+
+; produces a number from a list of fields
+; with the format '((value size))
+; like '((#xde 8) (#xad 8)) to make #xdead
+(define (merge-bitfields size fields)
+  (let* ([field-values (map first fields)]
+         [field-lengths (map second fields)]
+         [positions (map (lambda (p l) (- size p l)) (lengths-to-positions field-lengths) field-lengths)])
+    (if (foldl (lambda (v len result) (if (< v (expt 2 len)) result #f))
+               #t field-values field-lengths)
+        (foldl (lambda (v pos result)
+                 (bitwise-ior result (arithmetic-shift v pos)))
+               0 field-values positions)
+        (error "value too large for its bitfield."))))
 
 ;define format-0 '([op 3] [alu-op 4] [io 1] [imm-8 8] [rsel1 3] [rs1 5] [rdsel 3] [rd 5]))
 
@@ -45,4 +64,4 @@
 ;instr ([op 3] [test 2] [br-off-h 2] [io 1] [rsel2 3] [rs2/imm-5 5] [rsel1 3] [rs1 5] [br-off-l 8])
 ;instr ([op 3] [load/store 1] [blen-h 3] [io 1] [imm-8 8] [blen-m 3] [rb 5] [blen-l 1] [rx-byte 2] [rx 5])
 
-(provide bit-slice extract-bitfields let-bitfields let-instruction-fields)
+(provide bit-slice extract-bitfields merge-bitfields let-bitfields let-instruction-fields)
