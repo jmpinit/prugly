@@ -1,7 +1,5 @@
 #lang racket
 
-(require macro-debugger/stepper-text)
-
 ; make a number from a bit range
 (define (bit-slice num start len)
   (let ([mask (- (expt 2 len) 1)])
@@ -44,11 +42,11 @@
       (error "fields extract more bits than value contains."))))
 
 ; produces a number from a list of fields
-; with the format '((value size))
-; like '((#xde 8) (#xad 8)) to make #xdead
+; with the format '((size value))
+; like '((8 #xde) (8 #xad)) to make #xdead
 (define (merge-bitfields size fields)
-  (let* ([field-values (map first fields)]
-         [field-lengths (map second fields)]
+  (let* ([field-lengths (map first fields)]
+         [field-values (map second fields)]
          [positions (map (lambda (p l) (- size p l)) (lengths-to-positions field-lengths) field-lengths)])
     (if (foldl (lambda (v len result) (if (< v (expt 2 len)) result #f))
                #t field-values field-lengths)
@@ -56,12 +54,5 @@
                  (bitwise-ior result (arithmetic-shift v pos)))
                0 field-values positions)
         (error "value too large for its bitfield."))))
-
-;define format-0 '([op 3] [alu-op 4] [io 1] [imm-8 8] [rsel1 3] [rs1 5] [rdsel 3] [rd 5]))
-
-;instr ([op 3] [sub-op 4] [io 1] [imm-16 16] [rdsel 3] [rd 5])
-;instr ([op 2] [test 3] [br-off-h 2] [io 1] [imm-8 8] [rsel1 3] [rs1 5] [br-off-l 8])
-;instr ([op 3] [test 2] [br-off-h 2] [io 1] [rsel2 3] [rs2/imm-5 5] [rsel1 3] [rs1 5] [br-off-l 8])
-;instr ([op 3] [load/store 1] [blen-h 3] [io 1] [imm-8 8] [blen-m 3] [rb 5] [blen-l 1] [rx-byte 2] [rx 5])
 
 (provide bit-slice extract-bitfields merge-bitfields let-bitfields let-instruction-fields)
