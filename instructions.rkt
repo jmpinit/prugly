@@ -3,6 +3,15 @@
 (require unstable/hash)
 (require "architecture.rkt")
 
+; TODO macro for parameter signatures
+; (sig rd r1 imm-8) to (list (list 'reg rd rdsel) (list 'reg r1 r1sel) (list 'imm-8 value))
+
+; TODO macro for instruction handler
+; (handler (sig encoding hash) ...)
+
+; TODO selectors are just the register name with "-sel" appended
+; like rd -> rd-sel
+
 ; format 0
 (define enc-0
   (list
@@ -47,7 +56,8 @@
                   (let ([value (hash-ref values name)])
                     (list size value)))
                 field-names field-sizes))
-      (error "incorrect values supplied for encoding."))))
+      (error (format "incorrect values supplied for encoding.\ngiven ~a\nbut need ~a."
+                     (hash-keys values) field-names)))))
 
 (define (build-instructions)
   (let ([instructions (make-hash)])
@@ -60,18 +70,16 @@
                            (fill-in-bitfields
                              (first enc-0)
                              (hash-union
-                               (hash 'op 0 'alu-op op-num)
-                               (hash 'io 0
-                                     'rsel2 rsel2 'r2 r2
+                               (hash 'op 0 'alu-op op-num 'io 0)
+                               (hash 'rsel2 rsel2 'r2 r2
                                      'rsel1 rsel1 'r1 r1
                                      'rdsel rdsel 'rd rd)))]
                           [(list (list 'reg rd rdsel) (list 'reg r1 rsel1) (list 'imm-8 value))
                            (fill-in-bitfields
                              (second enc-0)
                              (hash-union
-                               (hash 'op 0 'alu-op op-num)
-                               (hash 'io 1
-                                     'imm-8 value
+                               (hash 'op 0 'alu-op op-num 'io 1)
+                               (hash 'imm-8 value
                                      'rsel1 rsel1 'r1 r1
                                      'rdsel rdsel 'rd rd)))]
                           [_ (error "unrecognized instruction signature.")]))))
@@ -80,12 +88,167 @@
 
     ; build instructions of encoding 1
 
+    (hash-set!
+      instructions 'jmp
+      (lambda (params)
+        (match params
+          [(list (list 'reg r2 rsel2))
+           (fill-in-bitfields
+             (first enc-1)
+             (hash-union
+               (hash 'op 1 'sub-op 0 'io 0 '_ 0)
+               (hash 'rsel2 rsel2 'r2 r2)))]
+          [(list (list 'imm-16 value))
+           (fill-in-bitfields
+             (third enc-1)
+             (hash-union
+               (hash 'op 1 'sub-op 0 'io 1 '_ 0)
+               (hash 'imm-16 value)))])))
+
+    (hash-set!
+      instructions 'jal
+      (lambda (params)
+        (match params
+          [(list (list 'reg r2 rsel2) (list 'reg rd rdsel))
+           (fill-in-bitfields
+             (second enc-1)
+             (hash-union
+               (hash 'op 1 'sub-op 1 'io 0 '_ 0)
+               (hash 'rsel2 rsel2 'r2 r2 'rdsel rdsel 'rd rd)))]
+          [(list (list 'reg rd rdsel) (list 'imm-16 value))
+           (fill-in-bitfields
+             (fourth enc-1)
+             (hash-union
+               (hash 'op 1 'sub-op 1 'io 1)
+               (hash 'rdsel rdsel 'rd rd 'imm-16 value)))])))
+
+    ; lmbd and scan
+    (map (lambda (name sub-op)
+           (hash-set!
+             instructions name
+             (lambda (params)
+               (match params
+                 [(list (list 'reg rd rdsel) (list 'reg r2 rsel2))
+                  (fill-in-bitfields
+                    (second enc-1)
+                    (hash 'op 1 'sub-op sub-op 'io 0
+                          'rsel2 rsel2 'r2 r2
+                          'rdsel rdsel 'rd rd))]
+                 [(list (list 'reg rd rdsel) (list 'imm-8 value))
+                  (fill-in-bitfields
+                    (fifth enc-1)
+                    (hash 'op 1 'sub-op sub-op 'io 1
+                          'imm-8 value
+                          'rdsel rdsel 'rd rd))]))))
+         '(lmbd scan) '(3 4))
+
+    ; halt
+    (hash-set!
+      instructions 'halt
+      (lambda (params)
+        (match params
+          [(list)
+           (fill-in-bitfields
+             (sixth enc-1)
+             (hash 'op 1 'sub-op 5 '_ 0))])))
+
+    ; slp
+    (hash-set!
+      instructions 'slp
+      (lambda (params)
+        (match params
+          [(list (list 'imm-1 value))
+           (fill-in-bitfields
+             (seventh enc-1)
+             (hash 'op 1 'sub-op 15 'slp value '_ 0))])))
+
+    ; build instructions of encoding 2
+    
+    (map (lambda (name op-num test)
+           (hash-set!
+             instructions name
+             (lambda (params)
+               (match params
+                 [(list (list 'imm-10 broff) (list 'reg r1 rsel1) (list 'reg r2 rsel2))
+                  (fill-in-bitfields
+                    (first enc-2)
+                    (hash 'op op-num 'test test
+                          'rsel2 rsel2 'r2 r2
+                          'rsel1 rsel1 'r1 r1
+                          'broff-h (bit-slice broff 8 2)
+                          'broff-l (bit-slice broff 0 8)))]
+                 [(list (list 'imm-10 broff) (list 'reg r1 rsel1) (list 'imm-8 value))
+                  (fill-in-bitfields
+                    (second enc-2)
+                    (hash 'op op-num 'test test
+                          'imm-8 value
+                          'rsel1 rsel1 'r1 r1
+                          'broff-h (bit-slice broff 8 2)
+                          'broff-l (bit-slice broff 0 8)))]))))
+         '(qblt qbeq qble qbgt qbne qbge qba)
+         '(2    2    2    3    3    3    3)
+         (range 1 8))
+        
+    ; build instructions of encoding 3
+
+    (map (lambda (name test)
+           (hash-set!
+             instructions name
+             (lambda (params)
+               (match params
+                 [(list (list 'imm-10 broff) (list 'reg r1 rsel1) (list 'reg r2 rsel2))
+                  (fill-in-bitfields
+                    (first enc-3)
+                    (hash 'op 6 'test test 'io 0
+                          'rsel2 rsel2 'r2 r2
+                          'rsel1 rsel1 'r1 r1
+                          'broff-h (bit-slice broff 8 2)
+                          'broff-l (bit-slice broff 0 8)))]
+                 [(list (list 'imm-10 broff) (list 'reg r1 rsel1) (list 'imm-5 value))
+                  (fill-in-bitfields
+                    (second enc-3)
+                    (hash 'op 6 'test test 'io 1
+                          'imm-5 value
+                          'rsel1 rsel1 'r1 r1
+                          'broff-h (bit-slice broff 8 2)
+                          'broff-l (bit-slice broff 0 8)))]))))
+         '(qbbc qbbs) '(1 2))
+
+    ; build instructions of encoding 4
+
+    (map (lambda (name op-num l/s)
+           (hash-set!
+             instructions name
+             (lambda (params)
+               (match params
+                 [(list (list 'reg rb 7) (list 'reg rx rxsel) (list 'reg ro rosel) (list 'imm-7 burstlen))
+                  (fill-in-bitfields
+                    (first enc-4)
+                    (hash 'op op-num 'l/s l/s 'io 0
+                          'rosel rosel 'ro ro
+                          'rb rb
+                          'rxsel rxsel 'rx rx
+                          'bl-h (bit-slice burstlen 4 3)
+                          'bl-m (bit-slice burstlen 1 3)
+                          'bl-l (bit-slice burstlen 0 1)))]
+                 [(list (list 'reg rb 7) (list 'reg rx rxsel) (list 'imm-8 value) (list 'imm-7 burstlen))
+                  (fill-in-bitfields
+                    (second enc-4)
+                    (hash 'op op-num 'l/s l/s 'io 1
+                          'imm-8 value
+                          'rb rb
+                          'rxsel rxsel 'rx rx
+                          'bl-h (bit-slice burstlen 4 3)
+                          'bl-m (bit-slice burstlen 1 3)
+                          'bl-l (bit-slice burstlen 0 1)))]))))
+         '(sbbo lbbo sbco lbco)
+         '(7    7    4    4)
+         '(0    1    0    1))
+
     instructions
     ))
 
 (define instructions (build-instructions))
 
 (displayln "example:")
-(displayln
-  (format "add r0, r1, 7 => ~x"
-          ((hash-ref instructions 'add) (list '(reg 0 7) '(reg 1 7) '(imm-8 7)))))
+(displayln ((hash-ref instructions 'jal) (list `(reg 0 7) `(imm-16 ,#xdead))))
