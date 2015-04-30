@@ -1,101 +1,105 @@
 #lang racket
+(require parser-tools/lex
+         (prefix-in re- parser-tools/lex-sre)
+         parser-tools/yacc)
 
-(require "architecture.rkt")
+(define-tokens a (LABEL ID INSTR DIRECTIVE EXPR))
+(define-empty-tokens b (EOF LEND))
 
-(struct reg (offset field)
-        #:guard (lambda (offset field name)
-                  (unless (and (>= offset 0) (< offset 32))
-                    (error (format "~a is not a valid register offset." offset)))
-                  (unless (and (>= field 0) (< field 8))
-                    (error (format "~a is not a valid register field." field)))
-                  (values offset field)))
+(define-lex-trans number
+  (syntax-rules ()
+    ((_ digit)
+     (re-: (re-? (re-or "-" "+")) (uinteger digit)))))
 
-(struct imm8 (value)
-        #:guard (lambda (value name)
-                  (unless (and (>= value 0) (< value (expt 2 8)))
-                    (error (format "~a is not a valid imm8." value)))
-                  value))
+(define-lex-trans uinteger
+  (syntax-rules ()
+    ((_ digit) (re-+ digit))))
 
-(struct imm16 (value)
-        #:guard (lambda (value name)
-                  (unless (and (>= value 0) (< value (expt 2 16)))
-                    (error (format "~a is not a valid imm16." value)))
-                  value))
+(define-lex-abbrevs
+  [digit10 (char-range "0" "9")]
+  [number10 (number digit10)]
+  [identifier-characters (re-or (char-range "A" "z")
+                                "?" "!" ":" "$" "%" "^" "&")]
+  [identifier (re-+ identifier-characters)]
+  [register (re-: "r" (re-+ number10) (re-? (re-: "." (re-or "b0" "b1" "b2" "b3" "w0" "w1" "w2"))))]
+  [line-end (re-or "\r\n" "\n" "\r")]
+  [comment (re-: "//" (complement (re-: any-string "\n" any-string)) line-end)]
+  [multiline-comment (re-: "/*" (complement (re-: any-string "*/" any-string)) "*/" line-end)]
+  [instruction (re-or "add" "adc" "sub" "suc" "lsl" "lsr" "rsb" "rsc" "and" "or" "xor" "not" "min" "max" "clr" "set"
+                      "jmp" "jal" "ldi" "lmbd" "scan" "halt" "slp"
+                      "qblt" "qbeq" "qble" "qbgt" "qbne" "qbge" "qba"
+                      "qbbc" "qbbs"
+                      "sbbo" "lbbo" "sbco" "lbco")])
 
-;(define r0 (reg 0))
-;(define r1 (reg 1))
-;(define r2 (reg 2))
+(define assembly-lexer
+  (lexer
+    [(re-: identifier ":") (token-LABEL (regexp-match #rx".*(?=:)" lexeme))]
+    [instruction (token-INSTR lexeme)]
+    [identifier (token-ID lexeme)]
+    [(re-+ number10) (token-EXPR `,(string->number lexeme))]
+    [register (token-EXPR `(reg ,(split-reg lexeme)))]
+    ["@" (token-EXPR (read input-port))]
+    ["." (token-DIRECTIVE (read input-port))]
+    [(re-+ (re-or "\r\n" "\n")) (token-LEND)]
+    [(re-or "," whitespace comment multiline-comment)
+     (assembly-lexer input-port)]
+    [(eof) (token-EOF)]))
 
-(define-syntax (define-instruction stx)
-  (syntax-case stx ()
-    [(_ (name arg ...) [(pred ...) expr] ...)
-     (syntax
-       (begin
-       (define (name arg ...)
-         (cond
-           [(and (pred arg) ...) expr] ...
-           [else
-             (raise-type-error 'name
-                               "No arguments matched opcode predicates"
-                               (list arg ...))]))))]))
+(define (lex-assembly port)
+  (let ([token (assembly-lexer port)])
+    (if (equal? (token-name token) 'EOF)
+      null
+      (cons token (lex-assembly port)))))
 
-; encoding 0
+(define (field-to-value field)
+  (match field
+    [(regexp #rx"b([0-3])" (list _ num)) (string->number num)]
+    [(regexp #rx"w([0-2])" (list _ num)) (+ (string->number num) 4)]
+    [_ (error (format "unrecognized field \"~a\"" field))]))
+             
+(define (split-reg reg)
+  (match reg
+    [(regexp #rx"r([0-9][0-9]?).([wb][0-3])" (list _ offset field)) (list (string->number offset) (field-to-value field))]
+    [(regexp #rx"r([0-9][0-9]?)" (list _ offset)) (list (string->number offset) 7)]
+    [_ (error (format "could not split reg \"~a\"" reg))]))
 
-(define-syntax (make-enc-0 stx)
-  (syntax-case stx ()
-    [(_ name alu-op)
-     #'(define-instruction
-         (name dest src operand)
-         [(reg? reg? reg?)
-          (let ([sub-op alu-op]
-                [r2-sel (reg-field operand)]
-                [r2     (reg-offset operand)]
-                [r1-sel (reg-field src)]
-                [r1     (reg-offset src)]
-                [rd-sel (reg-field dest)]
-                [rd     (reg-offset dest)])
-            (merge-bitfields 32 `((3 1) (4 ,sub-op) (1 0) (3 ,r2-sel) (5 ,r2) (3 ,r1-sel) (5 ,r1) (3 ,rd-sel) (5 ,rd))))]
-         [(reg? reg? imm8?)
-          (let ([sub-op alu-op]
-                [value  (imm8-value operand)]
-                [r1-sel (reg-field src)]
-                [r1     (reg-offset src)]
-                [rd-sel (reg-field dest)]
-                [rd     (reg-offset dest)])
-            (merge-bitfields 32 `((3 1) (4 ,sub-op) (1 1) (8 ,value) (3 ,r1-sel) (3 ,rd-sel) (5 ,rd))))])]))
+; PARSER
 
-(make-enc-0 op-add 0)
-(make-enc-0 op-adc 1)
-(make-enc-0 op-sub 2)
-(make-enc-0 op-suc 3)
-(make-enc-0 op-lsl 4)
-(make-enc-0 op-lsr 5)
-(make-enc-0 op-rsb 6)
-(make-enc-0 op-rsc 7)
-(make-enc-0 op-and 8)
-(make-enc-0 op-or  9)
-(make-enc-0 op-xor 10)
-(make-enc-0 op-not 11)
-(make-enc-0 op-min 12)
-(make-enc-0 op-max 13)
-(make-enc-0 op-clr 14)
-(make-enc-0 op-set 15)
+(define assembly-parser
+  (parser
+    (debug "debug.log")
+    (start program)
+    (end EOF)
+    (error (lambda (tok-ok? tok-name tok-value) (displayln (format "~a, ~a, ~a" tok-ok? tok-name tok-value))))
+    (tokens a b)
+    (grammar
+      (parameter
+        [(ID) $1]
+        [(EXPR) $1])
+      (param-list
+        [(param-list parameter) (cons $1 $2)]
+        [(parameter) $1])
+      (instruction
+        [(INSTR param-list) (cons $1 $2)]
+        [(INSTR) $1])
+      (line
+        [(instruction LEND) $1]
+        [(LABEL LEND) $1]
+        [(DIRECTIVE LEND) $1] )
+      (program
+        [(line) $1]
+        [(line program) (cons $1 $2)]))))
 
-; encoding 1
+(define (lex-this lexer input)
+  (lambda () (lexer input)))
 
-;    '([op 3] [sub-op 4] [io 1] [rsel2 3] [r2 5] [_ 16])
-;    '([op 3] [sub-op 4] [io 1] [rsel2 3] [r2 5] [_ 8] [rdsel 3] [rd 5])
-;    '([op 3] [sub-op 4] [io 1] [imm-16 16] [_ 8])
-;    '([op 3] [sub-op 4] [io 1] [imm-16 16] [rdsel 3] [rd 5])
-;    '([op 3] [sub-op 4] [io 1] [imm-8 8] [_ 8] [rdsel 3] [rd 5])
-;    '([op 3] [sub-op 4] [_ 24])
-;    '([op 3] [sub-op 4] [io 1] [slp 1])))
+(void
+  (let* ([test-file "tests/asm/one-plus-one.asm"])
+    (let ([tokens (lex-assembly (open-input-file test-file))])
+      (displayln "\n-- lexed --\n")
+      (map displayln tokens)
+      (displayln "\n"))
 
-(define-instruction (op-ldi dest imm)
-  [(reg? imm16?) (let ([value (imm16-value imm)]
-                       [rd-sel (reg-field dest)]
-                       [rd (reg-offset dest)])
-                   (merge-bitfields 32 `((3 1) (4 2) (1 0) (16 ,value) (3 ,rd-sel) (5 ,rd))))])
-
-(format "~x" (op-add (reg 0 7) (reg 1 7) (imm8 #xbe)))
-(format "~x" (op-ldi (reg 0 7) (imm16 #xbeef)))
+    (let ([ast (assembly-parser (lex-this assembly-lexer (open-input-file test-file)))])
+      (displayln "\n-- parsed --\n")
+      (map displayln ast))))
