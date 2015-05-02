@@ -1,19 +1,7 @@
 #lang racket
 
-(require "architecture.rkt")
-
-; split list into lists of n elements
-(define (split-by lst n)
-  (if (not (empty? lst))
-    (cons (take lst n) (split-by (drop lst n) n))
-    '()))
-
-(define (read-instructions port)
-  (let ([instr-bytes (bytes->list (port->bytes port))])
-    (if (= (modulo (length instr-bytes) 4) 0)
-      (map (lambda (bs) (integer-bytes->integer (apply bytes bs) #f))
-           (split-by instr-bytes 4))
-      (error "File is not purely double words (not divisible by 4)."))))
+(require "architecture.rkt"
+         "utility.rkt")
 
 (define selector-names
   (list ".b0" ".b1" ".b2" ".b3" ".w0" ".w1" ".w2" ""))

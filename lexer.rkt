@@ -5,10 +5,14 @@
 (require "utility.rkt"
          "types.rkt")
 
-(provide assembly-lexer lex-assembly a b)
+(provide assembly-lexer
+         lex-this)
 
-(define-tokens a (LABEL ID INSTR DIRECTIVE REG EXPR))
-(define-empty-tokens b (EOF LEND))
+(provide valued-tokens
+         empty-tokens)
+
+(define-tokens valued-tokens (LABEL ID INSTR DIRECTIVE REG EXPR))
+(define-empty-tokens empty-tokens (EOF LEND))
 
 (define-lex-trans number
   (syntax-rules ()
@@ -37,9 +41,10 @@
 
 (define assembly-lexer
   (lexer
-    [(re-: identifier ":") (token-LABEL
-                             (first
-                               (regexp-match #rx".*(?=:)" lexeme)))]
+    [(re-: identifier ":")
+     (token-LABEL
+       (first
+         (regexp-match #rx".*(?=:)" lexeme)))]
     [op (token-INSTR lexeme)]
     [identifier (token-ID lexeme)]
     [(re-+ number10) (token-EXPR `,(string->number lexeme))]
@@ -51,8 +56,5 @@
      (assembly-lexer input-port)]
     [(eof) (token-EOF)]))
 
-(define (lex-assembly port)
-  (let ([token (assembly-lexer port)])
-    (if (equal? (token-name token) 'EOF)
-      null
-      (cons token (lex-assembly port)))))
+(define (lex-this lexer input)
+  (lambda () (lexer input)))
