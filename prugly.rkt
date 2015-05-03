@@ -1,11 +1,12 @@
 #lang racket
 
 (require "assembler.rkt"
-         "debugger.rkt")
+         "debugger.rkt"
+         "utility.rkt")
 
 (define (print-registers pru)
   (map (lambda (offset val)
-         (displayln (format "r~a = ~x" offset val)))
+         (displayln (format "r~a = ~s" offset (format-hex val))))
        (range 32)
        (read-registers pru)))
 
@@ -18,4 +19,6 @@
 
 (pru-run 1 program-reg-test)
 
+(void (print-registers 1))
+(write-register 1 3 #xdeadbeef)
 (void (print-registers 1))

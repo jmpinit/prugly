@@ -7,7 +7,8 @@
 (provide read-register
          read-registers
          read-status
-         read-control)
+         read-control
+         write-register)
 
 (provide running?
          counting?
@@ -63,6 +64,9 @@
 
 (define (read-register prunum reg)
   (drv_read_mem (register-address prunum reg)))
+
+(define (write-register prunum reg value)
+  (drv_write_mem (register-address prunum reg) value))
 
 (define (pru-run pru dwords)
   (let* ([bin-path (make-temporary-file "temp-~a.bin")]

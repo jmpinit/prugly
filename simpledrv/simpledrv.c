@@ -7,8 +7,6 @@
 #include "prussdrv.h"
 #include <pruss_intc_mapping.h>
 
-#include "simpledrv.h"
-
 uint32_t* pru = NULL;
 
 int drv_init() {
@@ -56,7 +54,17 @@ uint32_t drv_read_mem(int offset) {
         uint32_t v = pru[offset];
         return v;
     }
-}    
+}
+
+uint32_t drv_write_mem(int offset, int value) {
+    if (pru == NULL) {
+        printf("pru is NULL!\n");
+        return -1;
+    } else {
+        pru[offset] = value;
+        return 0;
+    }
+}
 
 int drv_pru_wait_event(unsigned int host_interrupt) {
     return prussdrv_pru_wait_event(host_interrupt);

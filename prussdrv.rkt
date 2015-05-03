@@ -14,9 +14,10 @@
 (define-drv drv_pru_disable (_fun _int -> _int))
 (define-drv drv_exit (_fun -> _int))
 (define-drv drv_read_mem (_fun _int -> _int))
+(define-drv drv_write_mem (_fun _int _uint -> _int))
 
 (define PRU_EVTOUT_0 0) ; from prussdrv.h
 (define PRU0_ARM_INTERRUPT 19) ; from pruss_intc_mapping.h
 
 (provide PRU_EVTOUT_0 PRU0_ARM_INTERRUPT)
-(provide drv_init drv_open drv_pruintc_init drv_exec_program drv_pru_wait_event drv_pru_clear_event drv_pru_disable drv_exit drv_read_mem)
+(provide drv_init drv_open drv_pruintc_init drv_exec_program drv_pru_wait_event drv_pru_clear_event drv_pru_disable drv_exit drv_read_mem drv_write_mem)
