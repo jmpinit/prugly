@@ -1,4 +1,4 @@
-#lang racket/base
+#lang racket
 
 (require ffi/unsafe
          ffi/unsafe/define)
