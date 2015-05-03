@@ -5,7 +5,8 @@
 (provide field-to-number
          string->register
          split-by
-         read-dwords)
+         read-dwords
+         format-hex)
 
 (define (field-to-number field)
   (match field
@@ -34,3 +35,12 @@
            (split-by instr-bytes 4))
       (error "File is not purely double words (not divisible by 4)."))))
 
+(define (format-hex value)
+  (let* ([hex-digits "0123456789ABCDEF"]
+         [num-nibbles (floor (+ 1 (real-part (/ (log value) (log 16)))))]
+         [value-digits
+           (map (lambda (i)
+                  (let ([nibble (bitwise-and (arithmetic-shift value (* -4 i)) #xf)])
+                    (string-ref hex-digits nibble)))
+                (reverse (range num-nibbles)))])
+    (apply string value-digits)))
