@@ -3,6 +3,7 @@
 (require rackunit rackunit/text-ui)
 
 (require "../assembler.rkt"
+         "../debugger.rkt"
          "../utility.rkt")
 
 (define (get-directory path)
@@ -39,23 +40,49 @@
       (read-dwords (open-input-file bin-path))
       (error "Assembled file not found."))))
 
+; TODO extract code shared with assemble-lines
+(define (pasm-lines origin-zero? lines)
+  (let* ([formatted-lines
+           (map (lambda (line)
+                  (string-append line "\n"))
+                lines)]
+         [code (apply string-append formatted-lines)]
+         [code-port (open-input-string code)])
+    (pasm origin-zero? code-port)))
+
 (define assembler-tests
   (test-suite
-    "Tests for assembler functionality."
+    "Assembler"
 
-    (test-case
-      "One plus one."
+    (test-suite
+      "Output"
 
-      (let* ([source
-               (apply 
-                 string-append
+      (test-case
+        "One plus one."
+
+        (let* ([source
                  (list
-                   "start:\n"
-                   "ldi    r0, 1\n"
-                   "ldi    r1, 1\n"
-                   "add    r2, r0, r1\n"))]
-             [prugly-dwords (assemble (open-input-string source))]
-             [pasm-dwords (pasm #t (open-input-string source))])
-        (check-equal? prugly-dwords pasm-dwords)))))
+                   "start:"
+                   "ldi    r0, 1"
+                   "ldi    r1, 1"
+                   "add    r2, r0, r1")]
+               [prugly-dwords (assemble-lines source)]
+               [pasm-dwords (pasm-lines #t source)])
+          (check-equal? prugly-dwords pasm-dwords))))
+
+    (test-suite
+      "Behavior"
+
+      (test-case
+        "Set one register."
+
+        (let* ([dwords
+                 (assemble-lines
+                   (list
+                     "ldi    r4, 4919" ; 1337 in hex
+                     "ldi    r31.b0, 35" ; trip interrupt
+                     "halt"))])
+          (pru-run 1 dwords)
+          (check-equal? (read-register 1 4) #x1337))))))
 
 (run-tests assembler-tests)

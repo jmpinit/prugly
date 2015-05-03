@@ -6,7 +6,8 @@
          "utility.rkt"
          "types.rkt")
 
-(provide assemble)
+(provide assemble
+         assemble-lines)
 
 (define-struct assembler (address symbols dwords))
 
@@ -78,4 +79,14 @@
          [symbols (pass-1 nodes)]
          [dwords (pass-2 symbols nodes)])
     dwords))
+
+; convenience function
+(define (assemble-lines lines)
+  (let* ([formatted-lines
+           (map (lambda (line)
+                  (string-append line "\n"))
+                lines)]
+         [code (apply string-append formatted-lines)]
+         [code-port (open-input-string code)])
+    (assemble code-port)))
 
