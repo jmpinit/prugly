@@ -1,6 +1,6 @@
 #lang racket
 
-(require unstable/hash)
+(require racket/hash)
 (require "architecture.rkt"
          "types.rkt")
 
