@@ -6,7 +6,7 @@
 
 (require rackunit/text-ui)
 
-(define opcode-tests
+(define hil-opcode-tests
   (test-suite
     "Testing assembler's implementation of individual opcodes."
     
@@ -18,4 +18,4 @@
         (pru-eval code)
         (check-equal? 152 (register-read 0))))))
  
-(run-tests opcode-tests)
+(run-tests hil-opcode-tests)

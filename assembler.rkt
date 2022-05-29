@@ -7,7 +7,8 @@
          "types.rkt")
 
 (provide assemble
-         assemble-lines)
+         assemble-lines
+         print-program-listing)
 
 (define-struct assembler (address symbols dwords))
 
@@ -80,7 +81,6 @@
          [dwords (pass-2 symbols nodes)])
     dwords))
 
-; convenience function
 (define (assemble-lines lines)
   (let* ([formatted-lines
            (map (lambda (line)
@@ -90,3 +90,8 @@
          [code-port (open-input-string code)])
     (assemble code-port)))
 
+(define (print-program-listing program)
+  (let ([machine-code (assemble-lines program)])
+    (for-each
+     (lambda (source bin) (printf "~x <- ~a\n" bin source))
+     program machine-code)))
