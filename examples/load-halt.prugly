@@ -1,0 +1,5 @@
+#lang reader "../lang/reader.rkt"
+
+ldi  r4, 4919
+ldi  r31.b0, 35
+halt
